@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.encoders import jsonable_encoder
 import netcine
 import get_channels
 
@@ -16,7 +15,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # Minimal manifest for Stremio
 MANIFEST = {
     "id": "org.skyflix.addon",
@@ -25,7 +23,19 @@ MANIFEST = {
     "description": "Skyflix aggregated addon",
     "resources": ["catalog", "meta", "stream"],
     "types": ["movie", "series", "tv"],
-    "idPrefixes": ["skyflix"]
+    "catalogs": [
+        {
+            "type": "movie",
+            "id": "skyflix-movies",
+            "name": "Skyflix Movies"
+        },
+        {
+            "type": "series",
+            "id": "skyflix-series",
+            "name": "Skyflix Series"
+        }
+    ],
+    "idPrefixes": ["skyflix", "tt"]
 }
 
 
@@ -34,40 +44,33 @@ async def manifest():
     return JSONResponse(content=MANIFEST)
 
 
-@app.post("/catalog")
-async def catalog(request: Request):
-    body = await request.json()
-    # Expected fields: query or type/id
-    query = body.get('query') or body.get('search')
+@app.get("/catalog/{type}/{id}.json")
+async def catalog(type: str, id: str, request: Request):
+    # Get search query from URL params
+    query = request.query_params.get('search', '')
     if query:
         items = netcine.ntc_search_catalog(query)
         return JSONResponse(content={"metas": items})
-    # fallback: empty
     return JSONResponse(content={"metas": []})
 
 
-@app.post("/meta")
-async def meta(request: Request):
-    body = await request.json()
-    type_ = body.get('type')
-    id_ = body.get('id')
-    if not type_ or not id_:
-        return JSONResponse(content={})
-    m = netcine.meta_ntc(type_, id_)
+@app.get("/meta/{type}/{id}.json")
+async def meta(type: str, id: str):
+    m = netcine.meta_ntc(type, id)
     return JSONResponse(content=m)
 
 
-@app.post("/stream")
-async def stream(request: Request):
-    body = await request.json()
-    type_ = body.get('type')
-    id_ = body.get('id')
-    if not type_ or not id_:
-        return JSONResponse(content={"streams": []})
-    streams = netcine.get_stream_ntc(type_, id_)
+@app.get("/stream/{type}/{id}.json")
+async def stream(type: str, id: str):
+    streams = netcine.get_stream_ntc(type, id)
     return JSONResponse(content={"streams": streams})
 
 
 @app.get("/healthz")
 async def health():
     return JSONResponse(content={"status": "ok"})
+
+
+@app.get("/")
+async def root():
+    return JSONResponse(content={"message": "Skyflix Addon - Access /manifest.json"})
